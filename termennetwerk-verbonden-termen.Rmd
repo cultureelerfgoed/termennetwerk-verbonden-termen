@@ -1,0 +1,258 @@
+---
+title: "Termennetwerk: verbonden termen"
+author:
+  - name: "[Ruben Schalk](mailto:r.schalk@cultureelerfgoed.nl)"
+    affiliation: "[Rijksdienst voor het Cultureel Erfgoed](https://www.cultureelerfgoed.nl)"
+    url: "https://www.cultureelerfgoed.nl"
+date: "`r format(Sys.time())`"
+output: 
+  html_document: 
+    number_sections: no
+---
+
+<style type="text/css">
+  body{
+  font-size: 14pt;
+text-align: justify}
+</style>
+
+
+```{r message=FALSE, warning=FALSE, echo=TRUE}
+
+library(jsonlite) 
+library(rjson)
+library(data.table)
+library(httr)
+library(curl)
+library(tibble)
+
+setwd("C:\\Users\\Ruben\\Documents\\05. RCE")
+
+```
+
+# Inhoudsopgave
+[Inleiding](#inleiding)\
+[Cultuurhistorische Thesaurus](#cultuurhistorische-thesaurus)\
+[Art and Architecture Thesaurus](#art-and-architecture-thesaurus)\
+[RKD Artists](#rkd-artists)\
+[Beeld en Geluid: GTAA Thesauri](#beeld-en-geluid-gtaa-thesauri)\
+[Muziekweb: Personen en Genres](#muziekweb-personen-en-genres)\
+
+# Inleiding
+Dit notebook evalueert hoeveel van de concepten in termenlijsten (thesauri, lijsten, etc.) binnen het [Termennetwerk](https://termennetwerk.netwerkdigitaalerfgoed.nl/) verwijzen naar andere online bronnen. Dit is belangrijk, want die onderlinge verbondenheid zorgt ervoor dat, ook al gebruiken niet alle instellingen dezelfde set thesauri, er in de toekomst toch verbindingen tussen deze collecties kunnen worden gelegd. Via onderstaande exercitie kunnen we evalueren welke thesauri, aangeboden op het Termennetwerk, linken naar andere thesauri, lijsten, of andere URI's.
+
+# Cultuurhistorische Thesaurus
+We beginnen met de [Cultuurhistorische Thesaurus (CHT)](https://thesaurus.cultureelerfgoed.nl/search;schemes=cht:b532325c-dc08-49db-b4f1-15e53b037ec3) die beheerd wordt door de Rijksdienst voor het Cultureel Erfgoed en die veel door de erfgoedsector wordt gebruikt.
+
+Om de connecties te kunnen evalueren kunnen we in veel gevallen niet gebruik maken van de SPARQL-endpoints die door de bronhouders worden aangeboden, vanwege beperkingen op deze endpoints. Daarom maken we in die gevallen, zoals bij alle PoolParty-thesauri, gebruik van een endpoint op de [Linked Data voorziening van de RCE](https://linkeddata.cultureelerfgoed.nl/).
+
+Na het laden van de R packages voeren we de eerste query op de CHT uit, die
+telt hoeveel relaties er zijn met andere bronnen (thesauri, wikidata, etc.). De relaties zijn in dit geval beperkt tot SKOS matches (`exactMatch`, `closeMatch`, etc.) omdat de CHT en de meeste andere PoolParty thesauri gebruik maken van het SKOS datamodel om relaties tussen andere bronnen te leggen.
+
+```{r message=FALSE, warning=FALSE, echo=TRUE}
+
+url <- "https://api.linkeddata.cultureelerfgoed.nl/datasets/rce/Cultuurhistorische-Thesaurus-CHT/services/Cultuurhistorische-Thesaurus-CHT/sparql"
+query <- "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+          PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+          PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+          SELECT (count(distinct(?term)) as ?all_concepts)
+                 (sum(if(REGEX(?pred, 'Match'), 1, 0)) as ?external_links_in_thesaurus)
+                 (xsd:float(sum(if(REGEX(?pred, 'Match'), 1, 0))) / xsd:float(count(distinct(?term))) * 100 as ?share_linked)
+          WHERE {
+            ?term a skos:Concept .
+            ?term ?pred ?obj .
+          }
+          LIMIT 10"
+
+response <- POST(url, body = list(query = query))
+content <- content(response, "parsed")
+df <- as.data.frame(do.call(rbind, lapply(content, as.data.frame)))
+print(df)
+
+```
+
+We zien dat er in de CHT ruim 1,2k connecties met andere bronnen te vinden zijn.
+Welke bronnen dit precies zijn wordt hieronder opgevraagd. Het gaat met name om DBpedia en Getty (AAT). De verwijzingen naar 'data.cultureelerfgoed.biz' zijn vooral vanwege de opname van CHT termen in het Referentienetwerk van de RCE, dat wordt gebruikt voor interne toepassingen.
+
+```{r message=FALSE, warning=FALSE, echo=TRUE}
+
+url <- "https://api.linkeddata.cultureelerfgoed.nl/datasets/rce/Cultuurhistorische-Thesaurus-CHT/services/Cultuurhistorische-Thesaurus-CHT/sparql"
+body <- list(
+    format = "json",
+    query = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+          PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+          PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+          SELECT ?hostname (count(?hostname) as ?unique_domains)
+          WHERE {
+            ?term a skos:Concept .
+            ?term ?pred ?obj .
+            FILTER(REGEX(?pred, 'Match'))
+            bind(strbefore(strafter(str(?obj), '://'), '/') as ?hostname)
+            FILTER(?hostname != '')
+           # FILTER(?external_links_in_thesaurus = 1^^xsd:int)
+          }
+          ORDER BY DESC(?unique_domains)
+          LIMIT 20")
+
+response <- POST(url, body = body, encode = "json")
+content <- content(response, "parsed")
+df <- as.data.frame(do.call(rbind, lapply(content, as.data.frame)))
+print(df)
+
+```
+# Art and Architecture Thesaurus
+
+Het endpoint van de [Art and Architecture Thesaurus (AAT)](https://www.getty.edu/research/tools/vocabularies/aat/) is wat meer beperkt, dus we kunnen niet alles herhalen van hierboven. Wel kunnen we de [query kopieren](http://vocab.getty.edu/sparql?query=PREFIX%20rdfs%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2000%2F01%2Frdf-schema%23%3E%0APREFIX%20gtv%3A%20%3Chttp%3A%2F%2Fvocab.getty.edu%2Fontology%23%3E%0A%0ASELECT%20(count(%3Fterm)%20as%20%3Fconcepts)%20WHERE%20%7B%0A%0A%20%0A%20%20%3Fterm%20a%20gtv%3AConcept%20.%0A%20%20%20%20%23%20%3Fterm%20skos%3AcloseMatch%20%3Fclosematch%20%0A%20%20%20%23%20optional%7B%3Fterm%20skos%3AbroadMatch%20%3Fbroadmatch%20.%7D%20%0A%20%20%0A%23%20FILTER(!regex(%3Fclosematch%2C%20%22getty%22))%0A%20%23%20bind(strbefore(strafter(str(%3Fclosematch)%2C%22%2F%2F%22)%2C%22%2F%22)%20as%20%3Fhostname)%0A%7D%20&toc=Introduction&implicit=true&equivalent=false&_form=/queriesF) die laat zien hoeven Getty concepten er in de AAT zitten, namelijk: 56469.
+
+Door wat (hier niet opgenomen) queries te proberen naar SKOS matches weten we dat er enkel skos:exactMatch relaties in de AAT zijn opgenomen. Veel hiervan zijn echter intern en verwijzen als loop naar dezelfde concepten binnen de AAT (gek genoeg, want het is formeel een mapping relatie).
+
+```{r message=FALSE, warning=FALSE, echo=TRUE}
+
+url <- "https://api.linkeddata.cultureelerfgoed.nl/datasets/ruben-schalk/cht-dump/services/cht-dump/sparql"
+body <- list(
+  format = "json",
+  query = 'PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+           PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+           PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+           PREFIX gtv: <http://vocab.getty.edu/ontology#>
+           
+           SELECT ?hostname (count(?term) as ?number_of_links) WHERE {
+             SERVICE <http://vocab.getty.edu/sparql> {
+               ?term a gtv:Concept .
+               ?term skos:exactMatch ?exactmatch 
+             }
+             FILTER(!regex(?exactmatch, "getty"))
+             bind(strbefore(strafter(str(?exactmatch),"//"),"/") as ?hostname)
+           }
+           ORDER BY DESC(?number_of_links)'
+)
+
+response <- POST(url, body = body, encode = "json")
+content <- content(response, "parsed")
+df <- as.data.frame(do.call(rbind, lapply(content, as.data.frame)))
+print(df)
+
+```
+
+Er is een aantal connecties met andere bronnen, zoals de output hierboven laat zien. Het percentage links is met 1.5% erg laag, wellicht vanwege de status van de AAT binnen het veld.
+
+(N.B.: we gebruiken de CHT-service omdat het niet lukt om het POST request direct naar het AAT-endpoint te sturen... Ook is het niet altijd mogelijk om de AAT op deze manier te bevragen, dus het zou kunnen dat je hierboven geen resultaten kunt zien.)
+
+# RKD Artists
+
+[RKD artists](https://rkd.nl/nl/explore/artists) is een belangrijke thesaurus om te verwijzen naar (voornamelijk) Nederlandse kunstenaars, collectioneurs, kunsthistorici (m/v) en gerelateerde personen. Een snelle verkenning van de [LOD versie van RKD artists](https://data.netwerkdigitaalerfgoed.nl/rkd/rkdartists/) laat zien dat hier ook geen `skos`, `owl` of `rdfs` matches gebruikt lijken te worden.
+
+Wel zijn er verwijzingen naar levensgebeurtenissen zoals geboorte, overlijden en plaats van activiteit. Deze bevatten vaak een geografische component. Bijna altijd is in deze gevallen een coordinaat toegevoegd (98%). Desondanks ligt hier een kans om plaatsen van activiteit te koppelen aan een geografische thesaurus of toponiemenlijst, zoals Geonames.
+
+Laten we eens kijken of dat een zinvolle exercitie is met de data zoals die nu is. Hoe eenvoudig zijn de lat/lon coordinaten te koppelen aan het Geonames endpoint die op het Termennetwerk staat?
+
+```{r message=FALSE, warning=FALSE, echo=TRUE}
+
+url <- "https://data.netwerkdigitaalerfgoed.nl/_api/datasets/rkd/rkdartists/services/rkdartists/sparql"
+query <- "PREFIX wgs84: <http://www.w3.org/2003/01/geo/wgs84_pos#>
+          PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+          PREFIX schema: <http://schema.org/>
+          PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+          PREFIX skos:<http://www.w3.org/2004/02/skos/core#>
+          PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+          SELECT * WHERE {
+
+          ?plaats_activiteit_rkd a <http://data.rkd.nl/def#Place_of_Activity> .
+          ?plaats_activiteit_rkd schema:latitude ?lat .
+          ?plaats_activiteit_rkd schema:longitude ?lon .
+
+          # BIND(STRDT(CONCAT(\"POINT(\",str(?lon), \" \", str(?lat), \")\"),geo:wktLiteral) as ?coordinates)
+
+          SERVICE <https://demo.netwerkdigitaalerfgoed.nl/geonames/sparql> {
+          ?geonames_uri wgs84:latitude ?lat .
+          ?geonames_uri wgs84:longitude ?lon .
+          }
+          }
+          LIMIT 5"
+
+response <- POST(url, body = list(query = query), encode = "json")
+
+# retrieve response and convert to data.frame
+content <- content(response, "parsed")
+df <- as.data.frame(do.call(rbind, lapply(content, as.data.frame)))
+print(df)
+
+```
+
+Het is dus technisch mogelijk om plaatsen uit RKD Artists te verbinden met
+Geonames. Grote nadeel van bovenstaande methode is dat we 'live' een exacte match in coordinaten moeten zoeken in beide endpoints. Hierdoor kunnen we slechts een beperkt aantal resultaten opvragen voordat we een time-out krijgen. Aan te raden is daarom om de koppeling met Geonames in de RKD artists dataset aangemaakt wordt. Thesauri en aanhangende objecten uit collecties zijn efficienter op locatie te verbinden via (Geonames) URI's dan op lengte- en breedtegraden. Bijkomend voordeel bij gebruik van URI's i.p.v. coordinaten is dat je meer flexibiliteit in locaties toestaat dan een exacte overeenkomst op twee coordinaten.
+
+# Beeld en Geluid: GTAA Thesauri
+
+Beeld en Geluid beheert de [Gemeenschappelijke Thesaurus Audiovisuele Archieven](https://www.beeldengeluid.nl/kennis/kennisthemas/metadata/gemeenschappelijke-thesaurus-audiovisuele-archieven). Deze zijn onderverdeeld in verschillende elementen: classificaties, genres, geografische termen, namen, onderwerpen, onderwerpen beeld-geluid en persoonsnamen. We kunnen deze gezamelijk via de [Comunico webinterface](https://cat.apis.beeldengeluid.nl/sparql) nalopen op externe links. De queries kunnen even duren, dus wacht rustig af na klikken op 'Execute query' bij elke link.
+
+Allereerst zoeken we naar de predicates die een relatie met een andere thesaurus kunnen bevatten. Deze [query](https://cat.apis.beeldengeluid.nl/sparql#transientDatasources=https%3A%2F%2Fcat.apis.beeldengeluid.nl%2Fsparql&query=PREFIX%20xsd%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23%3E%0APREFIX%20skos%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2004%2F02%2Fskos%2Fcore%23%3E%0APREFIX%20rdf%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E%0APREFIX%20rdfs%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2000%2F01%2Frdf-schema%23%3E%0APREFIX%20gtv%3A%20%3Chttp%3A%2F%2Fvocab.getty.edu%2Fontology%23%3E%0APREFIX%20xsd%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23%3E%0APREFIX%20skos%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2004%2F02%2Fskos%2Fcore%23%3E%0APREFIX%20rdf%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E%0APREFIX%20rdfs%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2000%2F01%2Frdf-schema%23%3E%0APREFIX%20gtv%3A%20%3Chttp%3A%2F%2Fvocab.getty.edu%2Fontology%23%3E%0Aprefix%20schema%3A%20%3Chttp%3A%2F%2Fschema.org%2F%3E%20%0A%0ASELECT%20DISTINCT%20%3Fpred%20WHERE%20%7B%0A%0A%20%20%0A%20%3Fx%20a%20skos%3AConcept%20.%0A%20%3Fx%20%3Fpred%20%3Fobj.%0A%7D%0Alimit%2030%0A) laat verschillende `SKOS` matches zien. Controle van deze relaties, door deze `SKOS` matches op te vragen laat zien dat enkel de `exactMatch` verwijst naar externe bronnen. 
+
+Deze volgende query telt het [aantal `skos:exactMatch` relaties per GTAA thesaurus](https://cat.apis.beeldengeluid.nl/sparql#transientDatasources=https%3A%2F%2Fcat.apis.beeldengeluid.nl%2Fsparql&query=PREFIX%20xsd%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23%3E%0APREFIX%20skos%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2004%2F02%2Fskos%2Fcore%23%3E%0APREFIX%20rdf%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E%0APREFIX%20rdfs%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2000%2F01%2Frdf-schema%23%3E%0APREFIX%20gtv%3A%20%3Chttp%3A%2F%2Fvocab.getty.edu%2Fontology%23%3E%0A%0ASELECT%20%3Fscheme%20(count(%3Fmatch)%20as%20%3Fnumber_of_links)%20WHERE%20%7B%0A%0A%20%20%0A%20%20%3Fsub%20skos%3AinScheme%20%3Fscheme%20.%0A%20%20%3Fsub%20%20skos%3AexactMatch%20%3Fmatch%20.%0A%20%20%0A%20%23%20bind(strbefore(strafter(str(%3Fmatch)%2C%22%2F%2F%22)%2C%22%2F%22)%20as%20%3Fhostname)%0A%20%20%7D%20GROUP%20BY%20%3Fscheme). Te zien valt dat vooral de Persoonsnamen goed lijken te linken naar externe bronnen, wat bevestigt wordt in een [query die het aantal `skos:exactMatch` relaties laat zien t.o.v. alle concepten per thesaurus](https://cat.apis.beeldengeluid.nl/sparql#transientDatasources=https%3A%2F%2Fcat.apis.beeldengeluid.nl%2Fsparql&query=PREFIX%20xsd%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23%3E%0APREFIX%20skos%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2004%2F02%2Fskos%2Fcore%23%3E%0APREFIX%20rdf%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E%0APREFIX%20rdfs%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2000%2F01%2Frdf-schema%23%3E%0APREFIX%20gtv%3A%20%3Chttp%3A%2F%2Fvocab.getty.edu%2Fontology%23%3E%0APREFIX%20xsd%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23%3E%0APREFIX%20skos%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2004%2F02%2Fskos%2Fcore%23%3E%0APREFIX%20rdf%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E%0APREFIX%20rdfs%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2000%2F01%2Frdf-schema%23%3E%0APREFIX%20gtv%3A%20%3Chttp%3A%2F%2Fvocab.getty.edu%2Fontology%23%3E%0Aprefix%20schema%3A%20%3Chttp%3A%2F%2Fschema.org%2F%3E%20%0A%0ASELECT%20%3Fscheme%20(count(%3Fx)%20as%20%3Fconcept)%20(count(%3Fmatch)%20as%20%3Flinks)%20WHERE%20%7B%0A%0A%20%3Fx%20skos%3AinScheme%20%3Fscheme%20.%20%0A%20%3Fx%20a%20skos%3AConcept%20.%0A%20%20optional%7B%3Fx%20skos%3AexactMatch%20%3Fmatch%7D.%0A%20%20%0A%23%20%20FILTER(REGEX(%3Fpred%2C%20%22Match%22))%0A%7D%20GROUP%20BY%20%3Fscheme%20%0Alimit%2030%0A).
+
+Welke bronnen worden dan gebruikt om naar te verwijzen? De volgende query [groepeert alle externe links per GTAA thesaurus naar het domein waarnaar wordt gelinkt](https://cat.apis.beeldengeluid.nl/sparql#transientDatasources=https%3A%2F%2Fcat.apis.beeldengeluid.nl%2Fsparql&query=PREFIX%20skos%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2004%2F02%2Fskos%2Fcore%23%3E%0APREFIX%20rdf%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E%0APREFIX%20rdfs%3A%20%3Chttp%3A%2F%2Fwww.w3.org%2F2000%2F01%2Frdf-schema%23%3E%0APREFIX%20gtv%3A%20%3Chttp%3A%2F%2Fvocab.getty.edu%2Fontology%23%3E%0A%0ASELECT%20%3Fscheme%20%3Fhostname%20%3Fnumber_of_links%20WHERE%20%7B%0A%0A%20%20%20%20select%20%3Fscheme%20%3Fhostname%20(count(%3Fsub)%20as%20%3Fnumber_of_links)%20%0A%20%20%20%20%7B%0A%20%20%3Fsub%20skos%3AinScheme%20%3Fscheme%20.%0A%20%20%3Fsub%20%20skos%3AexactMatch%20%3Fmatch%20.%0A%20%20%0A%20%20bind(strbefore(strafter(str(%3Fmatch)%2C%22%2F%2F%22)%2C%22%2F%22)%20as%20%3Fhostname)%0A%20%20%7D%20%0A%20%20GROUP%20BY%20%3Fscheme%20%3Fhostname%20%0A%20%20%0A%20%7D%0A%23GROUP%20BY%20%3Fscheme%20%3Fhostname%20%0AORDER%20BY%20DESC(%20%3Fnumber_of_links)), beginnend bij het hoogste aantal links. Te zien is dat voornamelijk Discogs en Wikidata veel voorkomen.
+
+# Muziekweb: Personen en Genres
+
+Muziekweb biedt de Personen/Organisaties en Genres/Stijlen dataset thesauri aan op één endpoint. Een snelle query op het aantal typen (albums, genres, etc.) laat zien dat er meer dan 4,5 miljoen concepten zijn opgenomen. De [browser](https://data.muziekweb.nl/MuziekwebOrganization/Muziekweb/browser?resource=https%3A%2F%2Fdata.muziekweb.nl%2FLink%2FAA00005) laat zien dat we enkel de `owl:sameAs` relatie hoeven te doorzoeken voor connecties met andere datasets.
+
+```{r message=FALSE, warning=FALSE, echo=TRUE}
+
+url <- "https://api.data.muziekweb.nl/datasets/MuziekwebOrganization/Muziekweb/services/Muziekweb/sparql"
+query <- "PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+          PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+          PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+          SELECT ?hostname (count(?hostname) as ?unique_domains)
+          WHERE {
+            ?term owl:sameAs ?obj .
+            bind(strbefore(strafter(str(?obj), '://'), '/') as ?hostname)
+            FILTER(?hostname != '')
+                    }
+          ORDER BY DESC(?unique_domains)
+          LIMIT 20"
+
+response <- POST(url, body = list(query = query), encode = "json")
+
+# retrieve response and convert to data.frame
+content <- content(response, "parsed")
+df <- as.data.frame(do.call(rbind, lapply(content, as.data.frame)))
+print(df)
+```
+Er wordt dus ongeveer bij 1 op de 4 concepten gekoppeld naar een andere bron, wat een relatief hoog percentage is. Mooi is ook dat er verwezen wordt naar Discogs en Wikidata, net als Beeld en Geluid vaak doet. Via deze koppelingen zijn beide terminologiebronnen dus potentieel met elkaar te verbinden. Hieronder is te zien dat vooral albums en muziekgroepen gekoppeld zijn (de dubbelingen komen doordat er veelal meerdere typen gebruikt worden bij een concept).
+
+```{r message=FALSE, warning=FALSE, echo=TRUE}
+
+url <- "https://api.data.muziekweb.nl/datasets/MuziekwebOrganization/Muziekweb/services/Muziekweb/sparql"
+query <- "PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+          PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+          PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+          PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+          SELECT ?type (count(?hostname) as ?unique_domains)
+          WHERE {
+            ?term owl:sameAs ?obj .
+  			?term rdf:type ?type .
+            bind(strbefore(strafter(str(?obj), '://'), '/') as ?hostname)
+            FILTER(?hostname != '')
+                    }
+          ORDER BY DESC(?unique_domains)
+          LIMIT 20"
+
+response <- POST(url, body = list(query = query), encode = "json")
+
+# retrieve response and convert to data.frame
+content <- content(response, "parsed")
+df <- as.data.frame(do.call(rbind, lapply(content, as.data.frame)))
+print(df)
+```
+
