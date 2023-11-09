@@ -110,36 +110,7 @@ Het endpoint van de [Art and Architecture Thesaurus (AAT)](https://www.getty.edu
 
 Door wat (hier niet opgenomen) queries te proberen naar SKOS matches weten we dat er enkel skos:exactMatch relaties in de AAT zijn opgenomen. Veel hiervan zijn echter intern en verwijzen als loop naar dezelfde concepten binnen de AAT (gek genoeg, want het is formeel een mapping relatie).
 
-```{r message=FALSE, warning=FALSE, echo=TRUE}
-
-url <- "https://api.linkeddata.cultureelerfgoed.nl/datasets/ruben-schalk/cht-dump/services/cht-dump/sparql"
-body <- list(
-  format = "json",
-  query = 'PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-           PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-           PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-           PREFIX gtv: <http://vocab.getty.edu/ontology#>
-           
-           SELECT (count(distinct(?term)) as ?concept) (count(?exactmatch) as ?relaties) WHERE {
-             
-             SERVICE <http://vocab.getty.edu/sparql> {
-             
-               ?term a gtv:Concept .
-  optional{    ?term skos:exactMatch ?exactmatch }
-             }
-  }'
-)
-
-response <- POST(url, body = body, encode = "json")
-content <- content(response, "parsed")
-df <- as.data.frame(do.call(rbind, lapply(content, as.data.frame)))
-print(df)
-
-```
-
-Er is een aantal connecties met andere bronnen, zoals de output hierboven laat zien. Het percentage links is met 3,1% erg laag, wellicht vanwege de status van de AAT binnen het veld.
-
-We gebruiken de CHT-service omdat het niet lukt om het POST request direct naar het AAT-endpoint te sturen... Ook is het niet altijd mogelijk om de AAT op deze manier te bevragen, dus het zou kunnen dat je hierboven geen resultaten kunt zien. Via deze link is het resultaat van de query wel in te zien: [AAT query](http://vocab.getty.edu/sparql?query=PREFIX+skos%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F2004%2F02%2Fskos%2Fcore%23%3E%0D%0A+++++++++++PREFIX+rdf%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E%0D%0A+++++++++++PREFIX+rdfs%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F2000%2F01%2Frdf-schema%23%3E%0D%0A+++++++++++PREFIX+gtv%3A+%3Chttp%3A%2F%2Fvocab.getty.edu%2Fontology%23%3E%0D%0A%0D%0ASELECT+%28count%28distinct%28%3Fterm%29%29+as+%3Fconcept%29+%28count%28%3Fexactmatch%29+as+%3Frelaties%29+WHERE+%7B%0D%0A+++++++++++++%0D%0A+++++++++++++++%3Fterm+a+gtv%3AConcept+.%0D%0A++optional%7B++++%3Fterm+skos%3AexactMatch+%3Fexactmatch+%7D%0D%0A+++++++++++++%0D%0A++++++++++++%0D%0A+++++++++++%7D&_implicit=false&implicit=true&_equivalent=false&_form=%2Fsparql). 
+Via deze link is het resultaat van een query in te zien die het aantal concepten `skos:exactMatch` relaties telt: [AAT query](http://vocab.getty.edu/sparql?query=PREFIX+skos%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F2004%2F02%2Fskos%2Fcore%23%3E%0D%0A+++++++++++PREFIX+rdf%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F1999%2F02%2F22-rdf-syntax-ns%23%3E%0D%0A+++++++++++PREFIX+rdfs%3A+%3Chttp%3A%2F%2Fwww.w3.org%2F2000%2F01%2Frdf-schema%23%3E%0D%0A+++++++++++PREFIX+gtv%3A+%3Chttp%3A%2F%2Fvocab.getty.edu%2Fontology%23%3E%0D%0A%0D%0ASELECT+%28count%28distinct%28%3Fterm%29%29+as+%3Fconcept%29+%28count%28%3Fexactmatch%29+as+%3Frelaties%29+WHERE+%7B%0D%0A+++++++++++++%0D%0A+++++++++++++++%3Fterm+a+gtv%3AConcept+.%0D%0A++optional%7B++++%3Fterm+skos%3AexactMatch+%3Fexactmatch+%7D%0D%0A+++++++++++++%0D%0A++++++++++++%0D%0A+++++++++++%7D&_implicit=false&implicit=true&_equivalent=false&_form=%2Fsparql). Het percentage links is met 3,1% vrij laag, wellicht vanwege de status van de AAT binnen het veld.
 
 # RKD Artists
 
