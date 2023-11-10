@@ -26,7 +26,7 @@ library(httr)
 library(curl)
 library(tibble)
 
-setwd("C:\\Users\\Ruben\\Documents\\05. RCE")
+setwd("C:\\Users\\Ruben\\Documents\\05. RCE\\Termennetwerk\\termennetwerk-verbonden-termen")
 
 ```
 
